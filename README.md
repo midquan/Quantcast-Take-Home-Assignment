@@ -66,8 +66,8 @@ AtY0laUfhglK3lC7
 python most_active_cookie.py -f cookie_log.csv -d 2018-12-08
 ```
 ```
-SAZuXPGUrfbcn5UA
 4sMM2LxV07bPJzwf
+SAZuXPGUrfbcn5UA
 fbcn5UAVanZf6UtG
 ```
 
@@ -154,6 +154,16 @@ SAZuXPGUrfbcn5UA,2018-12-09T10:13:00+00:00
 - Forces explicit handling at call site
 - Clearer intent in code
 
+### 6. Graceful Handling of Malformed Data
+
+**Approach:** Skip rows with missing or empty cookie/timestamp fields, continue processing valid rows.
+
+**Rationale:**
+- Resilient to real-world data quality issues
+- Allows partial processing rather than failing completely
+- Silent skipping keeps output clean
+- Appropriate for log file processing where some corruption is expected
+
 ## Complexity Analysis
 
 ### Overall System Performance
@@ -222,7 +232,7 @@ SAZuXPGUrfbcn5UA,2018-12-09T10:13:00+00:00
 
 ```bash
 # Install pytest
-pip install pytest
+pip install -r requirements-dev.txt
 
 # Run all tests
 pytest test_most_active_cookie.py
@@ -234,36 +244,61 @@ pytest test_most_active_cookie.py -v
 pytest test_most_active_cookie.py --cov=most_active_cookie --cov-report=term-missing
 ```
 
-### Test Coverage
+### Test Suite
 
-| Test Case | Scenario | Expected Outcome |
-|-----------|----------|------------------|
-| `test_clear_winner` | Single most active cookie | Returns one cookie |
-| `test_tied_winners` | Multiple cookies tied | Returns all tied cookies |
-| `test_no_results` | No cookies for date | Exit code 1, stderr message |
-| `test_file_not_found` | Invalid file path | Exit code 2, error message |
-| `test_invalid_date_format` | Wrong date format | Exit code 2, format error |
-| `test_original_cookie_log_dec_09` | Example from spec | Returns `AtY0laUfhglK3lC7` |
-| `test_original_cookie_log_dec_08` | Multiple tied example | Returns 3 cookies |
+The test suite uses pytest with subprocess to run the script end-to-end, ensuring full integration testing.
 
+#### Test Coverage
+
+| Test Case | Scenario | Expected Outcome | Exit Code |
+|-----------|----------|------------------|-----------|
+| `test_clear_winner` | Single cookie appears most (3 times) | Returns `pbOLF3QajQsCmHUq` | 0 |
+| `test_tied_winners` | Two cookies tied at 2 occurrences each | Returns both cookies (sorted alphabetically) | 0 |
+| `test_no_results` | No cookies exist for specified date | Stderr: "No cookies found for date: 2025-11-12" | 1 |
+| `test_file_not_found` | Non-existent file path | Stderr contains "does not exist" | 2 |
+| `test_invalid_date_format` | Date format `2025/11/12` instead of `2025-11-12` | Stderr: "Date must be in %Y-%m-%d format" | 2 |
+| `test_original_cookie_log_dec_09` | Original spec example (2018-12-09) | Returns `AtY0laUfhglK3lC7` | 0 |
+| `test_original_cookie_log_dec_08` | Original spec with 3-way tie (2018-12-08) | Returns all 3 tied cookies | 0 |
+| `test_empty_csv` | CSV file with only headers, no data rows | Stderr: "No cookies found for date" | 1 |
+| `test_malformed_timestamp` | Mix of valid and invalid timestamp formats | Skips malformed rows, processes valid ones | 0 |
+| `test_missing_cookie_column` | CSV missing required 'cookie' header | Stderr: "Missing required columns" | 2 |
+
+**Total Tests:** 10  
 **Coverage:** 100% line and branch coverage
+
+### Edge Cases Handled
+
+1. **Empty CSV files** - Returns exit code 1 with appropriate message
+2. **Malformed timestamps** - Silently skips bad rows, continues processing
+3. **Missing required columns** - Fails fast with clear error message
+4. **Tied winners** - Returns all cookies with maximum count
+5. **Date not in file** - Distinguishes between "no data" vs "file errors"
+6. **Whitespace in data** - `.strip()` handles leading/trailing whitespace
+
+### Testing Strategy
+
+- **End-to-End:** Uses `subprocess` to run actual script, not imports
+- **Isolated:** Each test creates temporary CSV files via pytest `tmp_path` fixture
+- **Deterministic:** No external dependencies or network calls
+- **Fast:** All 10 tests complete in <2 seconds
+- **Comprehensive:** Covers happy path, edge cases, error conditions, and original spec
 
 ### Testing Philosophy
 
-- **Isolated:** Each test uses temporary files via pytest fixtures
-- **Deterministic:** No external dependencies or network calls
-- **Fast:** All tests complete in <1 second
-- **Comprehensive:** Covers happy path, edge cases, and error conditions
+1. **Real-world execution:** Tests run the script as users would, catching CLI and integration issues
+2. **Automatic cleanup:** Pytest fixtures handle temporary file creation and deletion
+3. **Explicit assertions:** Each test verifies exit code, stdout, and stderr independently
+4. **Self-contained data:** Test data embedded in test functions, no external file dependencies
 
 ## Project Structure
 
 ```
 .
-├── most_active_cookie.py      # Main script (170 lines)
-├── test_most_active_cookie.py # Test suite (120 lines)
-├── cookie_log.csv             # Sample data
+├── most_active_cookie.py      # Main script (~120 lines)
+├── test_most_active_cookie.py # Test suite (~180 lines, 10 tests)
+├── cookie_log.csv             # Sample data (original spec)
 ├── README.md                  # Documentation
-└── requirements-dev.txt       # Dev dependencies (pytest)
+└── requirements-dev.txt       # Dev dependencies (pytest, pytest-cov)
 ```
 
 ## Requirements

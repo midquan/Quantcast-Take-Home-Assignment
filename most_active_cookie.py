@@ -122,7 +122,7 @@ def find_most_active(csv_path: str, date_str: str) -> list[str] | None:
                 raise ValueError(f"Missing required columns: {', '.join(missing_headers)}")
             
             # Process rows
-            for row_num, row in enumerate(reader, start=2):
+            for row in reader:
                 cookie = row.get('cookie', '').strip()
                 timestamp = row.get('timestamp', '').strip()
                 

@@ -122,3 +122,38 @@ def test_original_cookie_log_dec_08(create_csv_file):
     
     assert exit_code == 0, f"Exit code was {exit_code}, stderr: {stderr}"
     assert sorted(output) == sorted(["4sMM2LxV07bPJzwf", "SAZuXPGUrfbcn5UA", "fbcn5UAVanZf6UtG"])
+
+def test_empty_csv(create_csv_file):
+    """Test case with only headers, no data rows."""
+    csv_content = "cookie,timestamp"
+    csv_path = create_csv_file("empty.csv", csv_content)
+    
+    output, stderr, exit_code = run_script(["-f", csv_path, "-d", "2025-11-12"])
+    
+    assert exit_code == 1
+    assert "No cookies found" in stderr
+
+def test_malformed_timestamp(create_csv_file):
+    """Test case with malformed timestamp (should skip row gracefully)."""
+    csv_content = (
+        "cookie,timestamp\n"
+        "validCookie,2025-11-12T10:00:00+00:00\n"
+        "badCookie,invalid-timestamp\n"
+        "validCookie,2025-11-12T11:00:00+00:00"
+    )
+    csv_path = create_csv_file("malformed.csv", csv_content)
+    
+    output, stderr, exit_code = run_script(["-f", csv_path, "-d", "2025-11-12"])
+    
+    assert exit_code == 0
+    assert output == ["validCookie"]
+
+def test_missing_cookie_column(create_csv_file):
+    """Test CSV missing required cookie column."""
+    csv_content = "timestamp\n2025-11-12T10:00:00+00:00"
+    csv_path = create_csv_file("missing_col.csv", csv_content)
+    
+    output, stderr, exit_code = run_script(["-f", csv_path, "-d", "2025-11-12"])
+    
+    assert exit_code == 2
+    assert "Missing required columns: cookie" in stderr
