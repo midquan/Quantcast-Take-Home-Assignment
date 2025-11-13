@@ -3,70 +3,171 @@
 import sys
 import csv
 import argparse
-import os
+from pathlib import Path
 from collections import Counter
 from datetime import datetime
 
-def parse_args():
-    p = argparse.ArgumentParser()
-    p.add_argument("-f", "--file", dest="csv_path", required=True, type=str)
-    p.add_argument("-d", "--date", required=True)
-    args = p.parse_args()
+
+DATE_FORMAT = '%Y-%m-%d'
+
+
+def validate_csv_file(filepath):
+    """Validate that the file exists and is readable.
     
-    if not os.path.exists(args.csv_path):
-        p.error(f"File '{args.csv_path}' not found")
+    Args:
+        filepath: Path to the CSV file
+        
+    Returns:
+        str: Validated file path
+        
+    Raises:
+        argparse.ArgumentTypeError: If file doesn't exist or isn't a file
+    """
+    path = Path(filepath)
+    if not path.exists():
+        raise argparse.ArgumentTypeError(f"File '{filepath}' does not exist")
+    if not path.is_file():
+        raise argparse.ArgumentTypeError(f"'{filepath}' is not a file")
+    if not path.suffix == '.csv':
+        raise argparse.ArgumentTypeError(f"File must be a CSV file, got '{path.suffix}'")
+    return str(path)
+
+
+def validate_date_format(date_str):
+    """Validate that the date string is in YYYY-MM-DD format.
     
+    Args:
+        date_str: Date string to validate
+        
+    Returns:
+        str: Validated date string
+        
+    Raises:
+        argparse.ArgumentTypeError: If date format is invalid
+    """
     try:
-        with open(args.csv_path, 'r') as f:
-            reader = csv.DictReader(f)
-            next(reader)
-            if 'cookie' not in reader.fieldnames or 'timestamp' not in reader.fieldnames:
-                p.error(f"CSV must have 'cookie' and 'timestamp' columns")
-    except csv.Error:
-        p.error(f"Invalid CSV file format")
-    except Exception as e:
-        p.error(f"Error reading file: {e}")
-    
-    try:
-        datetime.strptime(args.date, '%Y-%m-%d')
+        datetime.strptime(date_str, DATE_FORMAT)
+        return date_str
     except ValueError:
-        p.error(f"Date must be in YYYY-MM-DD format, got '{args.date}'")
+        raise argparse.ArgumentTypeError(
+            f"Date must be in {DATE_FORMAT} format, got '{date_str}'"
+        )
+
+
+def parse_args():
+    """Parse and validate command-line arguments.
     
-    return args
+    Returns:
+        argparse.Namespace: Parsed arguments
+    """
+    parser = argparse.ArgumentParser(
+        description='Find the most active cookie(s) for a given date'
+    )
+    parser.add_argument(
+        '-f', '--file',
+        dest='csv_path',
+        type=validate_csv_file,
+        required=True,
+        help='Path to CSV file containing cookie log data'
+    )
+    parser.add_argument(
+        '-d', '--date',
+        type=validate_date_format,
+        required=True,
+        help=f'Date to search in {DATE_FORMAT} format'
+    )
+    return parser.parse_args()
 
 
 def find_most_active(csv_path, date_str):
+    """Find the most active cookie(s) for a given date.
+    
+    Args:
+        csv_path: Path to the CSV file
+        date_str: Date string in YYYY-MM-DD format
+        
+    Returns:
+        list: List of cookie IDs with the highest count, or None if no data found
+        
+    Raises:
+        ValueError: If CSV is malformed or missing required columns
+    """
     cookie_counts = Counter()
     
-    with open(csv_path, 'r') as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            timestamp = row['timestamp']
-            if timestamp.startswith(date_str):
-                cookie_counts[row['cookie']] += 1
+    try:
+        with open(csv_path, 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            
+            # Validate CSV structure
+            if not reader.fieldnames:
+                raise ValueError("CSV file is empty")
+            
+            required_fields = {'cookie', 'timestamp'}
+            missing_fields = required_fields - set(reader.fieldnames)
+            if missing_fields:
+                raise ValueError(
+                    f"Missing required columns: {', '.join(missing_fields)}"
+                )
+            
+            # Process rows
+            for row_num, row in enumerate(reader, start=2):
+                cookie = row.get('cookie', '').strip()
+                timestamp = row.get('timestamp', '').strip()
+                
+                # Skip rows with missing data
+                if not cookie or not timestamp:
+                    continue
+                
+                # Filter by date
+                if timestamp.startswith(date_str):
+                    cookie_counts[cookie] += 1
     
+    except FileNotFoundError:
+        raise ValueError(f"CSV file not found: {csv_path}")
+    except PermissionError:
+        raise ValueError(f"Cannot read CSV file (permission denied): {csv_path}")
+    except csv.Error as e:
+        raise ValueError(f"Invalid CSV format: {e}")
+    
+    # Return None if no cookies found for the date
     if not cookie_counts:
         return None
     
+    # Find all cookies with the maximum count
     max_count = max(cookie_counts.values())
-    most_active = [cookie for cookie, count in cookie_counts.items() if count == max_count]
+    most_active = [
+        cookie for cookie, count in cookie_counts.items() 
+        if count == max_count
+    ]
     
     return most_active
 
 
 def main():
-    args = parse_args()
-    result = find_most_active(args.csv_path, args.date)
-    if result is None:
-        return 0
+    """Main entry point for the script.
+    
+    Returns:
+        int: Exit code (0 for success, 1 for no data, 2 for errors)
+    """
     try:
-        iter(result)
-    except TypeError:
-        print(result)
-    else:
-        for item in result:
-            print(item)
+        args = parse_args()
+        result = find_most_active(args.csv_path, args.date)
+        
+        if result is None:
+            return 1
+        
+        for cookie in result:
+            print(cookie)
+        
+        return 0
+    
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 2
+    except KeyboardInterrupt:
+        print("\nOperation cancelled by user", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":
-    sys.exit(main() or 0)
+    sys.exit(main())
