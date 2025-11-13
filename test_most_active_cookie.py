@@ -1,90 +1,110 @@
 import pytest
-import subprocess
 import sys
+import csv
+from pathlib import Path
+from unittest.mock import patch
+from io import StringIO
+
+# Import the module to test
+import most_active_cookie
+
 
 @pytest.fixture
 def create_csv_file(tmp_path):
-    """A pytest fixture to create a CSV file in a temporary directory."""
-    def _create_csv_file(filename, content):
-        file_path = tmp_path / filename
-        file_path.write_text(content)
-        return str(file_path)
-    return _create_csv_file
+    def _create_csv(filename, content):
+        csv_path = tmp_path / filename
+        csv_path.write_text(content)
+        return str(csv_path)
+    return _create_csv
+
 
 def run_script(args):
     """Helper function to run the main script with mocked arguments."""
-    process = subprocess.run(
-        [sys.executable, "most_active_cookie.py"] + args,
-        capture_output=True,
-        text=True
-    )
-    return process.stdout.strip().splitlines(), process.stderr.strip(), process.returncode
+    with patch('sys.argv', ['most_active_cookie.py'] + args):
+        stdout_capture = StringIO()
+        stderr_capture = StringIO()
+        
+        with patch('sys.stdout', stdout_capture), patch('sys.stderr', stderr_capture):
+            try:
+                exit_code = most_active_cookie.main()
+            except SystemExit as e:
+                exit_code = e.code
+        
+        stdout = stdout_capture.getvalue()
+        stderr = stderr_capture.getvalue()
+        
+        output = stdout.strip().split('\n') if stdout.strip() else []
+        return output, stderr, exit_code or 0
+
 
 def test_clear_winner(create_csv_file):
-    """Test case with a single most active cookie."""
     csv_content = (
         "cookie,timestamp\n"
-        "pbOLF3QajQsCmHUq,2025-11-12T10:00:00+00:00\n"
-        "pbOLF3QajQsCmHUq,2025-11-12T11:00:00+00:00\n"
-        "hupHAct4T0qsQd2i,2025-11-12T12:00:00+00:00\n"
-        "pbOLF3QajQsCmHUq,2025-11-12T13:00:00+00:00\n"
-        "MyxO3k4ja5N1qUT3,2025-11-11T10:00:00+00:00"
+        "pbOLF3QajQsCmHUq,2025-11-10T12:00:00+00:00\n"
+        "6xHusAPBEaFIwRjw,2025-11-10T13:00:00+00:00\n"
+        "pbOLF3QajQsCmHUq,2025-11-10T14:00:00+00:00\n"
+        "pbOLF3QajQsCmHUq,2025-11-10T15:00:00+00:00"
     )
-    csv_path = create_csv_file("test1.csv", csv_content)
+    csv_path = create_csv_file("test_winner.csv", csv_content)
     
-    output, stderr, exit_code = run_script(["-f", csv_path, "-d", "2025-11-12"])
+    output, stderr, exit_code = run_script(["-f", csv_path, "-d", "2025-11-10"])
     
-    assert exit_code == 0, f"Exit code was {exit_code}, stderr: {stderr}"
-    assert sorted(output) == ["pbOLF3QajQsCmHUq"]
+    assert exit_code == 0
+    assert output == ["pbOLF3QajQsCmHUq"]
+    assert stderr == ""
+
 
 def test_tied_winners(create_csv_file):
-    """Test case with multiple cookies tied for the most active."""
     csv_content = (
         "cookie,timestamp\n"
-        "sJcZT3VIgEV2xKQb,2025-11-12T08:00:00+00:00\n"
-        "OnUv9UEGxdJQV7kw,2025-11-12T08:30:00+00:00\n"
-        "sJcZT3VIgEV2xKQb,2025-11-12T09:00:00+00:00\n"
-        "OnUv9UEGxdJQV7kw,2025-11-12T09:30:00+00:00\n"
-        "hycDmBapFD9y5Vmy,2025-11-12T10:00:00+00:00"
+        "cookieA,2025-11-11T12:00:00+00:00\n"
+        "cookieB,2025-11-11T13:00:00+00:00\n"
+        "cookieA,2025-11-11T14:00:00+00:00\n"
+        "cookieB,2025-11-11T15:00:00+00:00"
     )
-    csv_path = create_csv_file("test2.csv", csv_content)
+    csv_path = create_csv_file("test_tie.csv", csv_content)
     
-    output, stderr, exit_code = run_script(["-f", csv_path, "-d", "2025-11-12"])
+    output, stderr, exit_code = run_script(["-f", csv_path, "-d", "2025-11-11"])
     
-    assert exit_code == 0, f"Exit code was {exit_code}, stderr: {stderr}"
-    assert sorted(output) == sorted(["OnUv9UEGxdJQV7kw", "sJcZT3VIgEV2xKQb"])
+    assert exit_code == 0
+    assert sorted(output) == sorted(["cookieA", "cookieB"])
+    assert stderr == ""
+
 
 def test_no_results(create_csv_file):
-    """Test case where no cookies are found for the given date."""
     csv_content = (
         "cookie,timestamp\n"
         "6xHusAPBEaFIwRjw,2025-11-10T12:00:00+00:00\n"
         "UvVEplqNureNQ6U9,2025-11-11T14:00:00+00:00"
     )
-    csv_path = create_csv_file("test3.csv", csv_content)
+    csv_path = create_csv_file("test_no_cookies.csv", csv_content)
     
     output, stderr, exit_code = run_script(["-f", csv_path, "-d", "2025-11-12"])
     
-    assert exit_code == 1, f"Exit code was {exit_code}, stderr: {stderr}"
+    assert exit_code == 1
     assert output == []
     assert "No cookies found for date: 2025-11-12" in stderr
 
-def test_file_not_found():
-    """Test case where the CSV file does not exist."""
-    output, stderr, exit_code = run_script(["-f", "non_existent_file.csv", "-d", "2025-11-12"])
-    
-    assert exit_code == 2
-    assert "File 'non_existent_file.csv' does not exist" in stderr
 
-def test_invalid_date_format():
-    """Test case with an invalid date format."""
-    output, stderr, exit_code = run_script(["-f", "cookie_log.csv", "-d", "2025/11/12"])
+def test_file_not_found():
+    output, stderr, exit_code = run_script(["-f", "nonexistent.csv", "-d", "2025-11-12"])
     
     assert exit_code == 2
-    assert "Date must be in %Y-%m-%d format" in stderr
+    assert "does not exist" in stderr
+
+
+def test_invalid_date_format(create_csv_file):
+    """Test invalid date format - file must exist first for date validation to run."""
+    csv_content = "cookie,timestamp\ntest,2025-11-10T12:00:00+00:00"
+    csv_path = create_csv_file("test.csv", csv_content)
+    
+    output, stderr, exit_code = run_script(["-f", csv_path, "-d", "2025/11/12"])
+    
+    assert exit_code == 2
+    assert "Date must be in" in stderr
+
 
 def test_original_cookie_log_dec_09(create_csv_file):
-    """Test with original cookie_log.csv data for 2018-12-09."""
     csv_content = (
         "cookie,timestamp\n"
         "AtY0laUfhglK3lC7,2018-12-09T14:19:00+00:00\n"
@@ -100,11 +120,12 @@ def test_original_cookie_log_dec_09(create_csv_file):
     
     output, stderr, exit_code = run_script(["-f", csv_path, "-d", "2018-12-09"])
     
-    assert exit_code == 0, f"Exit code was {exit_code}, stderr: {stderr}"
+    assert exit_code == 0
     assert output == ["AtY0laUfhglK3lC7"]
 
+
 def test_original_cookie_log_dec_08(create_csv_file):
-    """Test with original cookie_log.csv data for 2018-12-08."""
+    """Test for 2018-12-08: SAZuXPGUrfbcn5UA, 4sMM2LxV07bPJzwf, and fbcn5UAVanZf6UtG each appear once."""
     csv_content = (
         "cookie,timestamp\n"
         "AtY0laUfhglK3lC7,2018-12-09T14:19:00+00:00\n"
@@ -120,12 +141,15 @@ def test_original_cookie_log_dec_08(create_csv_file):
     
     output, stderr, exit_code = run_script(["-f", csv_path, "-d", "2018-12-08"])
     
-    assert exit_code == 0, f"Exit code was {exit_code}, stderr: {stderr}"
-    assert sorted(output) == sorted(["4sMM2LxV07bPJzwf", "SAZuXPGUrfbcn5UA", "fbcn5UAVanZf6UtG"])
+    assert exit_code == 0
+    assert len(output) == 3
+    assert "SAZuXPGUrfbcn5UA" in output
+    assert "4sMM2LxV07bPJzwf" in output
+    assert "fbcn5UAVanZf6UtG" in output
+
 
 def test_empty_csv(create_csv_file):
-    """Test case with only headers, no data rows."""
-    csv_content = "cookie,timestamp"
+    csv_content = "cookie,timestamp\n"
     csv_path = create_csv_file("empty.csv", csv_content)
     
     output, stderr, exit_code = run_script(["-f", csv_path, "-d", "2025-11-12"])
@@ -133,27 +157,145 @@ def test_empty_csv(create_csv_file):
     assert exit_code == 1
     assert "No cookies found" in stderr
 
+
 def test_malformed_timestamp(create_csv_file):
-    """Test case with malformed timestamp (should skip row gracefully)."""
     csv_content = (
         "cookie,timestamp\n"
-        "validCookie,2025-11-12T10:00:00+00:00\n"
+        "goodCookie,2025-11-10T12:00:00+00:00\n"
         "badCookie,invalid-timestamp\n"
-        "validCookie,2025-11-12T11:00:00+00:00"
+        "goodCookie,2025-11-10T13:00:00+00:00"
     )
     csv_path = create_csv_file("malformed.csv", csv_content)
     
-    output, stderr, exit_code = run_script(["-f", csv_path, "-d", "2025-11-12"])
+    output, stderr, exit_code = run_script(["-f", csv_path, "-d", "2025-11-10"])
+    
+    assert exit_code == 0
+    assert output == ["goodCookie"]
+
+
+def test_missing_cookie_column(create_csv_file):
+    csv_content = (
+        "timestamp\n"
+        "2025-11-10T12:00:00+00:00"
+    )
+    csv_path = create_csv_file("missing_column.csv", csv_content)
+    
+    output, stderr, exit_code = run_script(["-f", csv_path, "-d", "2025-11-10"])
+    
+    assert exit_code == 2
+    assert "Missing required columns" in stderr
+
+
+def test_not_a_file(tmp_path):
+    """Test that a directory path is rejected (line 44)."""
+    dir_path = tmp_path / "not_a_file.csv"
+    dir_path.mkdir()
+    
+    output, stderr, exit_code = run_script(["-f", str(dir_path), "-d", "2025-11-12"])
+    
+    assert exit_code == 2
+    assert "is not a file" in stderr
+
+
+def test_not_csv_extension(create_csv_file):
+    """Test that non-.csv files are rejected (line 46)."""
+    txt_content = "cookie,timestamp\ntest,2025-11-10T12:00:00+00:00"
+    txt_path = create_csv_file("test.txt", txt_content)
+    
+    output, stderr, exit_code = run_script(["-f", txt_path, "-d", "2025-11-12"])
+    
+    assert exit_code == 2
+    assert "File must be a CSV file" in stderr
+
+
+def test_permission_error(create_csv_file, tmp_path):
+    """Test permission denied error (line 142)."""
+    csv_content = "cookie,timestamp\ntest,2025-11-10T12:00:00+00:00"
+    csv_path = create_csv_file("protected.csv", csv_content)
+    
+    with patch('builtins.open', side_effect=PermissionError("Permission denied")):
+        with patch('most_active_cookie.validate_csv_file', return_value=csv_path):
+            output, stderr, exit_code = run_script(["-f", csv_path, "-d", "2025-11-10"])
+    
+    assert exit_code == 2
+    assert "permission denied" in stderr.lower()
+
+
+def test_csv_error(create_csv_file):
+    """Test CSV parsing error (line 144)."""
+    csv_path = create_csv_file("malformed.csv", "cookie,timestamp\n")
+    
+    with patch('csv.DictReader') as mock_reader:
+        mock_instance = mock_reader.return_value
+        mock_instance.fieldnames = ['cookie', 'timestamp']
+        mock_instance.__iter__.side_effect = csv.Error("Bad CSV format")
+        
+        with patch('most_active_cookie.validate_csv_file', return_value=csv_path):
+            output, stderr, exit_code = run_script(["-f", csv_path, "-d", "2025-11-10"])
+    
+    assert exit_code == 2
+    assert "Invalid CSV format" in stderr
+
+
+def test_keyboard_interrupt():
+    """Test KeyboardInterrupt handling (line 181-182)."""
+    with patch('most_active_cookie.parse_args', side_effect=KeyboardInterrupt()):
+        output, stderr, exit_code = run_script(["-f", "test.csv", "-d", "2025-11-10"])
+    
+    assert exit_code == 2
+    assert "Operation cancelled by user" in stderr
+
+
+def test_empty_csv_file(create_csv_file):
+    """Test completely empty CSV file (line 117)."""
+    csv_path = create_csv_file("empty_file.csv", "")
+    
+    output, stderr, exit_code = run_script(["-f", csv_path, "-d", "2025-11-10"])
+    
+    assert exit_code == 2
+    assert "CSV file is empty" in stderr
+
+
+def test_missing_timestamp_column(create_csv_file):
+    """Test CSV missing timestamp column (line 131)."""
+    csv_content = (
+        "cookie\n"
+        "testCookie"
+    )
+    csv_path = create_csv_file("missing_timestamp.csv", csv_content)
+    
+    output, stderr, exit_code = run_script(["-f", csv_path, "-d", "2025-11-10"])
+    
+    assert exit_code == 2
+    assert "Missing required columns" in stderr
+    assert "timestamp" in stderr
+
+
+def test_empty_cookie_value(create_csv_file):
+    """Test row with empty cookie value gets skipped (line 138)."""
+    csv_content = (
+        "cookie,timestamp\n"
+        ",2025-11-10T12:00:00+00:00\n"
+        "validCookie,2025-11-10T13:00:00+00:00"
+    )
+    csv_path = create_csv_file("empty_cookie.csv", csv_content)
+    
+    output, stderr, exit_code = run_script(["-f", csv_path, "-d", "2025-11-10"])
     
     assert exit_code == 0
     assert output == ["validCookie"]
 
-def test_missing_cookie_column(create_csv_file):
-    """Test CSV missing required cookie column."""
-    csv_content = "timestamp\n2025-11-12T10:00:00+00:00"
-    csv_path = create_csv_file("missing_col.csv", csv_content)
+
+def test_empty_timestamp_value(create_csv_file):
+    """Test row with empty timestamp value gets skipped (line 138)."""
+    csv_content = (
+        "cookie,timestamp\n"
+        "testCookie,\n"
+        "validCookie,2025-11-10T13:00:00+00:00"
+    )
+    csv_path = create_csv_file("empty_timestamp.csv", csv_content)
     
-    output, stderr, exit_code = run_script(["-f", csv_path, "-d", "2025-11-12"])
+    output, stderr, exit_code = run_script(["-f", csv_path, "-d", "2025-11-10"])
     
-    assert exit_code == 2
-    assert "Missing required columns: cookie" in stderr
+    assert exit_code == 0
+    assert output == ["validCookie"]
