@@ -283,5 +283,3 @@ pytest test_most_active_cookie.py --cov=most_active_cookie --cov-report=term-mis
 pytest>=7.4.0
 pytest-cov>=4.1.0
 ```
-
-**No runtime
