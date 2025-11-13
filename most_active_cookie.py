@@ -1,4 +1,17 @@
 #!/usr/bin/env python3
+"""
+Cookie log analyzer that finds the most active cookie(s) for a given date.
+
+Usage:
+    python most_active_cookie.py -f <CSV_PATH> -d <DATE>
+
+Arguments:
+    -f, --file <CSV_PATH>: Path to the cookie log CSV file
+    -d, --date <DATE>: Date in YYYY-MM-DD format
+
+Example:
+    python most_active_cookie.py -f cookie_log.csv -d 2018-12-09
+"""
 
 import sys
 import csv
@@ -9,9 +22,10 @@ from datetime import datetime
 
 
 DATE_FORMAT = '%Y-%m-%d'
+REQUIRED_HEADERS = {'cookie', 'timestamp'}
 
 
-def validate_csv_file(filepath):
+def validate_csv_file(filepath: str) -> str:
     """Validate that the file exists and is readable.
     
     Args:
@@ -33,7 +47,7 @@ def validate_csv_file(filepath):
     return str(path)
 
 
-def validate_date_format(date_str):
+def validate_date_format(date_str: str) -> str:
     """Validate that the date string is in YYYY-MM-DD format.
     
     Args:
@@ -54,7 +68,7 @@ def validate_date_format(date_str):
         )
 
 
-def parse_args():
+def parse_args() -> argparse.Namespace:
     """Parse and validate command-line arguments.
     
     Returns:
@@ -79,7 +93,7 @@ def parse_args():
     return parser.parse_args()
 
 
-def find_most_active(csv_path, date_str):
+def find_most_active(csv_path: str, date_str: str) -> list[str] | None:
     """Find the most active cookie(s) for a given date.
     
     Args:
@@ -87,7 +101,7 @@ def find_most_active(csv_path, date_str):
         date_str: Date string in YYYY-MM-DD format
         
     Returns:
-        list: List of cookie IDs with the highest count, or None if no data found
+        list[str] | None: List of cookie IDs with the highest count, or None if no data found
         
     Raises:
         ValueError: If CSV is malformed or missing required columns
@@ -102,12 +116,10 @@ def find_most_active(csv_path, date_str):
             if not reader.fieldnames:
                 raise ValueError("CSV file is empty")
             
-            required_fields = {'cookie', 'timestamp'}
-            missing_fields = required_fields - set(reader.fieldnames)
-            if missing_fields:
-                raise ValueError(
-                    f"Missing required columns: {', '.join(missing_fields)}"
-                )
+            # Check for required headers
+            missing_headers = REQUIRED_HEADERS - set(reader.fieldnames)
+            if missing_headers:
+                raise ValueError(f"Missing required columns: {', '.join(missing_headers)}")
             
             # Process rows
             for row_num, row in enumerate(reader, start=2):
@@ -143,7 +155,7 @@ def find_most_active(csv_path, date_str):
     return most_active
 
 
-def main():
+def main() -> int:
     """Main entry point for the script.
     
     Returns:
@@ -154,6 +166,7 @@ def main():
         result = find_most_active(args.csv_path, args.date)
         
         if result is None:
+            print(f"No cookies found for date: {args.date}", file=sys.stderr)
             return 1
         
         for cookie in result:
